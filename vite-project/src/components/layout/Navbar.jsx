@@ -3,6 +3,7 @@ import { BrandLogo } from './BrandLogo';
 import { ThemeToggle } from './ThemeToggle';
 import { Button } from '../common/Button';
 import { NAV_ITEMS } from '../../constants/navItems';
+import { useAuth } from '../../context/AuthContext';
 
 /**
  * Single Responsibility: Organizes top header layout and navigation.
@@ -10,6 +11,7 @@ import { NAV_ITEMS } from '../../constants/navItems';
  */
 export const Navbar = ({ items = NAV_ITEMS, onLoginClick }) => {
   const [activeId, setActiveId] = useState('dashboard');
+  const { user, isAuthenticated, logout } = useAuth();
 
   return (
     <header className="navbar-container">
@@ -39,18 +41,67 @@ export const Navbar = ({ items = NAV_ITEMS, onLoginClick }) => {
           </nav>
         </div>
 
-        {/* Right: Theme Toggle & Login Action */}
-        <div className="navbar-right">
+        {/* Right: Theme Toggle & User Auth Action */}
+        <div className="navbar-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <ThemeToggle />
-          <Button
-            variant="outline"
-            size="sm"
-            className="navbar-login-btn"
-            onClick={onLoginClick}
-            aria-label="Log in"
-          >
-            Login
-          </Button>
+
+          {isAuthenticated ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.name || 'User'}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '1.5px solid var(--border-color, #334155)',
+                  }}
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    backgroundColor: 'var(--accent-color, #3b82f6)',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {user?.name ? user.name[0].toUpperCase() : 'U'}
+                </div>
+              )}
+              <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary, #f8fafc)' }}>
+                {user?.name?.split(' ')[0] || user?.email?.split('@')[0]}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="navbar-logout-btn"
+                onClick={logout}
+                aria-label="Sign out"
+              >
+                Sign out
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="navbar-login-btn"
+              onClick={onLoginClick}
+              aria-label="Log in"
+            >
+              Login
+            </Button>
+          )}
         </div>
       </div>
     </header>

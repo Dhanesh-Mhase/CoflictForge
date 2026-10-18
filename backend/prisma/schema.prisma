@@ -14,6 +14,7 @@ model User {
   avatarUrl     String?
   googleId      String         @unique
   refreshTokens RefreshToken[]
+  repositories  Repository[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -32,4 +33,83 @@ model RefreshToken {
 
   @@index([userId])
   @@index([tokenHash])
+}
+
+model Repository {
+  id            String        @id @default(uuid())
+  userId        String
+  githubRepoId  BigInt
+  owner         String
+  name          String
+  fullName      String
+  url           String
+  defaultBranch String        @default("main")
+  isPrivate     Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pullRequests  PullRequest[]
+
+  @@unique([userId, githubRepoId])
+  @@index([userId])
+}
+
+model PullRequest {
+  id                  String     @id @default(uuid())
+  repositoryId        String
+  githubPrNumber      Int
+  title               String
+  body                String?    @db.Text
+  state               String     @default("open")
+  baseBranch          String
+  headBranch          String
+  baseSha             String
+  headSha             String
+  mergeable           Boolean?
+  analysisStatus      String     @default("NOT_ANALYZED")
+  hasConflicts        Boolean?
+  analyzedBaseSha     String?
+  analyzedHeadSha     String?
+  analysisStartedAt   DateTime?
+  analysisCompletedAt DateTime?
+  analysisError       String?    @db.Text
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  repository          Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  conflicts           Conflict[]
+
+  @@unique([repositoryId, githubPrNumber])
+  @@index([repositoryId])
+}
+
+model Conflict {
+  id                  String      @id @default(uuid())
+  pullRequestId       String
+  filePath            String
+  conflictType        String      @default("MERGE")
+  risk                String      @default("MEDIUM")
+  baseStartLine       Int?
+  baseEndLine         Int?
+  headStartLine       Int?
+  headEndLine         Int?
+  baseSha             String
+  headSha             String
+  ancestorSha         String?
+  baseCode            String?     @db.Text
+  headCode            String?     @db.Text
+  ancestorCode        String?     @db.Text
+  diff                String?     @db.Text
+  astContext          Json?
+  commitContext       Json?
+  explanation         String      @db.Text
+  suggestedResolution String      @db.Text
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  pullRequest         PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@index([pullRequestId])
+  @@index([pullRequestId, filePath])
 }

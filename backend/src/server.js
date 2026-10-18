@@ -6,6 +6,7 @@ import prisma from './config/prisma.js';
 import { securityHeaders } from './middlewares/security.middleware.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js';
 import authRoutes from './routes/auth.routes.js';
+import repositoryRoutes from './routes/repository.routes.js';
 
 validateEnv();
 
@@ -33,6 +34,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/repositories', repositoryRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

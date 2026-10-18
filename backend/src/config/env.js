@@ -22,6 +22,8 @@ export const env = {
   },
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
 };
 
 export const validateEnv = () => {

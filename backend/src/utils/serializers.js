@@ -1,10 +1,25 @@
 import { BadRequestError } from './errors.js';
 
+export const normalizeBigInt = (value) => {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(normalizeBigInt);
+  if (typeof value === 'object') {
+    if (value instanceof Date) return value;
+    const copy = {};
+    for (const [key, val] of Object.entries(value)) {
+      copy[key] = normalizeBigInt(val);
+    }
+    return copy;
+  }
+  return value;
+};
+
 export const serializeResponse = (data = null, message = 'Success') => {
   return {
     success: true,
     message,
-    data,
+    data: normalizeBigInt(data),
   };
 };
 

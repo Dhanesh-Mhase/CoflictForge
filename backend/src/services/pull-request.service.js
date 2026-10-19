@@ -81,6 +81,22 @@ export const pullRequestService = {
 
     const fullPr = await pullRequestRepository.findByRepoAndNumber(repo.id, parsedNumber, true);
 
+    let changedFiles = [];
+    try {
+      const remoteFiles = await githubService.getPullRequestFiles(repo.owner, repo.name, parsedNumber);
+      if (Array.isArray(remoteFiles)) {
+        changedFiles = remoteFiles.map((f) => ({
+          filename: f.filename,
+          status: f.status,
+          additions: f.additions,
+          deletions: f.deletions,
+          patch: f.patch,
+        }));
+      }
+    } catch (e) {
+      console.warn('Could not fetch PR files list:', e.message);
+    }
+
     return {
       ...fullPr,
       isStale: this.computeIsStale(fullPr),
@@ -89,6 +105,7 @@ export const pullRequestService = {
         ? { login: remotePr.user.login, avatarUrl: remotePr.user.avatar_url }
         : null,
       changedFilesCount: remotePr.changed_files,
+      changedFiles,
       additions: remotePr.additions,
       deletions: remotePr.deletions,
     };

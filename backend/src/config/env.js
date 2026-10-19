@@ -23,7 +23,9 @@ export const env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
   GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+  GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+  GROQ_MODEL: process.env.GROQ_MODEL || '',
+  GROQ_BASE_URL: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
 };
 
 export const validateEnv = () => {

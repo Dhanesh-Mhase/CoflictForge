@@ -1,18 +1,14 @@
-import { GoogleGenAI } from '@google/genai';
 import { env } from '../config/env.js';
 import conflictRepository from '../repository/conflict.repository.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors.js';
 
 export const chatService = {
-  getAiClient() {
-    if (!env.GEMINI_API_KEY) {
-      return null;
-    }
-    return new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  hasApiKey() {
+    return Boolean(env.GROQ_API_KEY);
   },
 
   /**
-   * Deterministic fallback when Gemini API is unconfigured or unavailable
+   * Deterministic fallback when Groq API is unconfigured or unavailable
    */
   generateFallbackAnswer(conflict, userMessage) {
     const symbolContext = conflict.astContext?.scope
@@ -33,7 +29,7 @@ export const chatService = {
   },
 
   /**
-   * Answer a contextual question about a specific conflict finding
+   * Answer a contextual question about a specific conflict finding using OpenAI (e.g. gpt-4o-mini, gpt-4o)
    */
   async ask({ userId, repositoryId, prNumber, conflictId, message, history = [] }) {
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -103,8 +99,7 @@ ${conflict.diff || 'N/A'}
 - Provide concrete code blocks if suggesting an implementation or resolution.
 - Be concise, accurate, and explain any trade-offs or breaking risks.`;
 
-    const ai = this.getAiClient();
-    if (!ai) {
+    if (!this.hasApiKey()) {
       return {
         conflictId,
         answer: this.generateFallbackAnswer(conflict, message.trim()),
@@ -113,38 +108,50 @@ ${conflict.diff || 'N/A'}
     }
 
     // 4. Format conversation history (bounded to last 6 messages)
-    const formattedContents = [
-      { role: 'user', parts: [{ text: systemContext }] },
-      { role: 'model', parts: [{ text: 'Understood. I have reviewed the conflict context and am ready to assist the developer.' }] },
+    const messages = [
+      { role: 'system', content: systemContext },
     ];
 
     if (Array.isArray(history)) {
       const recentHistory = history.slice(-6);
       for (const turn of recentHistory) {
         if (!turn.content || typeof turn.content !== 'string') continue;
-        const role = turn.role === 'model' || turn.role === 'assistant' ? 'model' : 'user';
-        formattedContents.push({
+        const role = turn.role === 'model' || turn.role === 'assistant' ? 'assistant' : 'user';
+        messages.push({
           role,
-          parts: [{ text: turn.content }],
+          content: turn.content,
         });
       }
     }
 
-    formattedContents.push({
+    messages.push({
       role: 'user',
-      parts: [{ text: message.trim() }],
+      content: message.trim(),
     });
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: formattedContents,
-        config: {
-          temperature: 0.3,
+      const response = await fetch(`${env.GROQ_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.GROQ_API_KEY}`,
         },
+        body: JSON.stringify({
+          model: env.GROQ_MODEL,
+          temperature: 0.3,
+          messages,
+        }),
       });
 
-      const answer = response.text?.trim() || this.generateFallbackAnswer(conflict, message.trim());
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Groq API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      const answer =
+        data.choices?.[0]?.message?.content?.trim() ||
+        this.generateFallbackAnswer(conflict, message.trim());
 
       return {
         conflictId,
@@ -152,7 +159,7 @@ ${conflict.diff || 'N/A'}
         timestamp: new Date().toISOString(),
       };
     } catch (err) {
-      console.warn(`[WARN] Chat LLM call failed (${err.message}). Using deterministic fallback.`);
+      console.warn(`[WARN] Groq chat call failed (${err.message}). Using deterministic fallback.`);
       return {
         conflictId,
         answer: this.generateFallbackAnswer(conflict, message.trim()),

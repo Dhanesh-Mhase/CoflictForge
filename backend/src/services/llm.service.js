@@ -1,12 +1,8 @@
-import { GoogleGenAI } from '@google/genai';
 import { env } from '../config/env.js';
 
 export const llmService = {
-  getAiClient() {
-    if (!env.GEMINI_API_KEY) {
-      return null;
-    }
-    return new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  hasApiKey() {
+    return Boolean(env.GROQ_API_KEY);
   },
 
   /**
@@ -47,7 +43,7 @@ export const llmService = {
   },
 
   /**
-   * Generate explanation and resolution recommendation using Google Gemini or fallback
+   * Generate explanation and resolution recommendation using Groq Free LLM (e.g. llama-3.3-70b-versatile)
    */
   async generateConflictResolution({
     prTitle,
@@ -58,9 +54,7 @@ export const llmService = {
     commitContext,
     diff,
   }) {
-    const ai = this.getAiClient();
-
-    if (!ai) {
+    if (!this.hasApiKey()) {
       return this.generateFallback({ filePath, rawConflict, astContext });
     }
 
@@ -94,21 +88,36 @@ ${rawConflict.headCode || '[Empty or deleted]'}
 --- DIFF HUNK ---
 ${diff || 'N/A'}
 
-Provide explanation, risk evaluation, and suggested resolved code.`;
+Provide explanation, risk evaluation, and suggested resolved code in valid JSON.`;
+
+
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          { role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] },
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
+      const response = await fetch(`${env.GROQ_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.GROQ_API_KEY}`,
         },
+        body: JSON.stringify({
+          model: env.GROQ_MODEL,
+          response_format: { type: 'json_object' },
+          temperature: 0.2,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        }),
       });
 
-      const responseText = response.text?.trim();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Groq API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      const responseText = data.choices?.[0]?.message?.content?.trim();
+
       if (!responseText) {
         return this.generateFallback({ filePath, rawConflict, astContext });
       }
@@ -126,7 +135,7 @@ Provide explanation, risk evaluation, and suggested resolved code.`;
         suggestedResolution: parsed.suggestedResolution || rawConflict.headCode || '',
       };
     } catch (err) {
-      console.warn(`[WARN] LLM analysis call failed (${err.message}). Using deterministic fallback.`);
+      console.warn(`[WARN] AI analysis call failed (${err.message}). Using deterministic fallback.`);
       return this.generateFallback({ filePath, rawConflict, astContext });
     }
   },

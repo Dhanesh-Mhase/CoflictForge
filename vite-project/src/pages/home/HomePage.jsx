@@ -1,23 +1,21 @@
 import React from 'react';
-import { LinkIcon, GitForkIcon, CloseIcon, CheckIcon } from '../../components/common/Icon';
+import { LinkIcon } from '../../components/common/Icon';
 import { Button } from '../../components/common/Button';
 import { useRepoForm } from '../../hooks/useRepoForm';
 
 /**
- * HomePage Component (KISS: Single cohesive file for the home landing view)
- * Matches the ConflictForge landing page screenshot in both Dark and Light modes.
+ * HomePage Component
+ * Matches the ConflictForge landing page screenshot with live API integration and instant navigation.
  */
-export const HomePage = () => {
+export const HomePage = ({ onLoginClick }) => {
   const {
     url,
     error,
     isLoading,
-    analysisResult,
     handleChange,
     handleSubmit,
     fillSampleUrl,
-    clearAnalysis,
-  } = useRepoForm();
+  } = useRepoForm('', onLoginClick);
 
   return (
     <main className="hero-section" id="hero">
@@ -70,7 +68,7 @@ export const HomePage = () => {
                   disabled={isLoading}
                   aria-label="Try it out"
                 >
-                  {isLoading ? 'Analyzing...' : 'Try it out'}
+                  {isLoading ? 'Connecting...' : 'Try it out'}
                 </Button>
               </div>
             </form>
@@ -96,62 +94,6 @@ export const HomePage = () => {
           </p>
         </div>
       </div>
-
-      {/* 4. Conflict Analysis Simulation Modal */}
-      {analysisResult && (
-        <div className="modal-backdrop" onClick={clearAnalysis} role="dialog" aria-modal="true">
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title-group">
-                <GitForkIcon size={20} className="modal-git-icon" />
-                <h2 className="modal-title">Conflict Analysis Ready</h2>
-              </div>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={clearAnalysis}
-                aria-label="Close dialog"
-              >
-                <CloseIcon size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body">
-              <div className="analysis-summary-badge">
-                <span className="status-dot"></span>
-                <span>Target: <strong>{analysisResult.repo || 'owner/repo/pull/42'}</strong></span>
-              </div>
-
-              <p className="analysis-desc">
-                ConflictForge inspected the git merge base. 2 conflicting files were identified and an isolated container sandbox has been prepared in your browser:
-              </p>
-
-              <ul className="conflict-file-list">
-                {analysisResult.conflictingFiles.map((file, idx) => (
-                  <li key={idx} className="conflict-file-item">
-                    <span className="file-status-indicator">CLASH</span>
-                    <code className="file-path">{file}</code>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="environment-check-box">
-                <CheckIcon size={16} className="check-icon-accent" />
-                <span>Browser test runner initialized: 14 passing, 2 merge blocks waiting for resolution.</span>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <Button variant="outline" size="sm" onClick={clearAnalysis}>
-                Back
-              </Button>
-              <Button variant="primary" size="sm" onClick={clearAnalysis}>
-                Launch Browser Editor
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 };

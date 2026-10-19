@@ -51,11 +51,12 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
 
     // Check for token expiration error code
-    const isTokenExpired =
+    const shouldRefresh =
       error.response?.status === 401 &&
-      error.response?.data?.error?.code === 'TOKEN_EXPIRED';
+      (error.response?.data?.error?.code === 'TOKEN_EXPIRED' ||
+        error.response?.data?.error?.code === 'TOKEN_MISSING');
 
-    if (isTokenExpired && !originalRequest._retry) {
+    if (shouldRefresh && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });

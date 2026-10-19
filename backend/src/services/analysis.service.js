@@ -220,6 +220,19 @@ export const analysisService = {
       throw new NotFoundError('Pull request not found.', 'PULL_REQUEST_NOT_FOUND');
     }
 
+    let changedFiles = [];
+    try {
+      const remoteFiles = await githubService.getPullRequestFiles(repo.owner, repo.name, parsedNumber);
+      if (Array.isArray(remoteFiles)) {
+        changedFiles = remoteFiles.map((f) => ({
+          filename: f.filename,
+          status: f.status,
+          additions: f.additions,
+          deletions: f.deletions,
+        }));
+      }
+    } catch (_) {}
+
     return {
       pullRequestId: pr.id,
       githubPrNumber: pr.githubPrNumber,
@@ -232,6 +245,7 @@ export const analysisService = {
       analysisCompletedAt: pr.analysisCompletedAt,
       analysisError: pr.analysisError,
       conflicts: pr.conflicts || [],
+      changedFiles,
     };
   },
 

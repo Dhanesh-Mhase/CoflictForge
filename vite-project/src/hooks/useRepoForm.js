@@ -1,28 +1,35 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SAMPLE_PULL_REQUEST_URL } from '../constants/navItems';
+import repositoriesApi from '../api/repositories.api';
+import { useAuth } from '../context/AuthContext';
 
 /**
  * Custom Hook: useRepoForm
- * Single Responsibility: Encapsulates PR/repo URL state, sample injection, and submission status.
+ * Encapsulates PR/repo URL state, real backend API integration, and route transitions.
  */
-export const useRepoForm = (initialUrl = '') => {
+export const useRepoForm = (initialUrl = '', onRequireLogin = null) => {
   const [url, setUrl] = useState(initialUrl);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState(null);
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   const fillSampleUrl = useCallback(() => {
     setUrl(SAMPLE_PULL_REQUEST_URL);
     setError('');
   }, []);
 
-  const handleChange = useCallback((e) => {
-    setUrl(e.target.value);
-    if (error) setError('');
-  }, [error]);
+  const handleChange = useCallback(
+    (e) => {
+      setUrl(e.target.value);
+      if (error) setError('');
+    },
+    [error]
+  );
 
   const handleSubmit = useCallback(
-    (e) => {
+    async (e) => {
       if (e) e.preventDefault();
 
       const trimmed = url.trim();
@@ -31,43 +38,58 @@ export const useRepoForm = (initialUrl = '') => {
         return;
       }
 
-      // Basic GitHub URL validation
       const githubPattern = /^(https?:\/\/)?(www\.)?github\.com\/[\w-]+\/[\w.-]+(\/pull\/\d+)?\/?$/i;
       if (!githubPattern.test(trimmed)) {
-        setError('Please enter a valid GitHub URL (e.g., https://github.com/owner/repo/pull/42)');
+        setError(
+          'Please enter a valid GitHub URL (e.g., https://github.com/owner/repo or /pull/42)'
+        );
+        return;
+      }
+
+      if (!isAuthenticated) {
+        if (onRequireLogin) {
+          onRequireLogin();
+          return;
+        }
+        setError('Please sign in first to analyze repositories and view conflicts.');
         return;
       }
 
       setError('');
       setIsLoading(true);
 
-      // Simulate ConflictForge analysis step (instant/clean mock response)
-      setTimeout(() => {
-        setIsLoading(false);
-        setAnalysisResult({
-          repo: trimmed.replace(/^(https?:\/\/)?(www\.)?github\.com\//, ''),
-          hasConflicts: true,
-          conflictingFiles: ['src/services/auth.ts', 'package.json'],
-          status: 'ready',
-        });
-      }, 700);
-    },
-    [url]
-  );
+      try {
+        const repo = await repositoriesApi.addRepository(trimmed);
 
-  const clearAnalysis = useCallback(() => {
-    setAnalysisResult(null);
-  }, []);
+        // Check if URL points to a specific pull request
+        const prMatch = trimmed.match(/\/pull\/(\d+)/i);
+        if (prMatch && prMatch[1]) {
+          navigate(`/repositories/${repo.id}/pull-requests/${prMatch[1]}/analysis`);
+        } else {
+          navigate(`/repositories/${repo.id}`);
+        }
+      } catch (err) {
+        console.error('Error adding repository:', err);
+        setError(
+          err.response?.data?.message ||
+            'Failed to add repository. Please verify the GitHub URL and access permissions.'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [url, isAuthenticated, onRequireLogin, navigate]
+  );
 
   return {
     url,
     setUrl,
     error,
     isLoading,
-    analysisResult,
     handleChange,
     handleSubmit,
     fillSampleUrl,
-    clearAnalysis,
   };
 };
+
+export default useRepoForm;

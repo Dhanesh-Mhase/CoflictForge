@@ -79,6 +79,7 @@ model PullRequest {
 
   repository          Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   conflicts           Conflict[]
+  sandboxes           Sandbox[]
 
   @@unique([repositoryId, githubPrNumber])
   @@index([repositoryId])
@@ -112,4 +113,22 @@ model Conflict {
 
   @@index([pullRequestId])
   @@index([pullRequestId, filePath])
+}
+
+model Sandbox {
+  id            String    @id @default(uuid())
+  pullRequestId String
+  conflictId    String?
+  containerId   String?   // Docker container ID
+  status        String    @default("PROVISIONING")
+  // PROVISIONING | CLONING | RUNNING_TESTS | PASSED | FAILED | TIMED_OUT | ERROR
+  testOutput    String?   @db.LongText
+  exitCode      Int?
+  resolvedFiles Json?     // { "filePath": "resolvedContent", ... }
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@index([pullRequestId])
 }

@@ -3,14 +3,19 @@ import { UnauthorizedError } from '../utils/errors.js';
 
 export const verifyAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
+  let token = null;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
+  }
+
+  if (!token) {
     return next(
       new UnauthorizedError('Authentication token is required.', 'TOKEN_MISSING')
     );
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const decoded = verifyAccessToken(token);

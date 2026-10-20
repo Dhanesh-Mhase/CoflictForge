@@ -8,9 +8,17 @@ export const MonacoDiffViewer = ({
   baseSource = '',
   headSource = '',
   activeConflict = null,
-  viewMode = 'diff', // 'diff' | 'base' | 'head'
+  viewMode = 'diff', // 'diff' | 'base' | 'head' | 'resolve'
   onViewModeChange,
   isLoading = false,
+  // Editable resolved code props
+  resolvedSource = '',
+  onResolvedSourceChange,
+  // Sandbox props
+  onRunTests,
+  onPushResolution,
+  sandboxStatus = null,
+  isPushing = false,
 }) => {
   const { theme } = useTheme();
   const diffEditorRef = useRef(null);
@@ -19,17 +27,9 @@ export const MonacoDiffViewer = ({
 
   const editorTheme = theme === 'dark' ? 'vs-dark' : 'light';
 
-  // Handle DiffEditor mount
-  const handleDiffMount = (editor) => {
-    diffEditorRef.current = editor;
-  };
+  const handleDiffMount = (editor) => { diffEditorRef.current = editor; };
+  const handleEditorMount = (editor) => { editorRef.current = editor; };
 
-  // Handle single Editor mount
-  const handleEditorMount = (editor) => {
-    editorRef.current = editor;
-  };
-
-  // Jump to conflict line and apply decorations when active conflict changes
   useEffect(() => {
     if (viewMode === 'diff' && diffEditorRef.current) {
       const modifiedEditor = diffEditorRef.current.getModifiedEditor();
@@ -42,8 +42,6 @@ export const MonacoDiffViewer = ({
       }
 
       modifiedEditor.revealLineInCenter(activeConflict.headStartLine);
-
-      // Decorate conflict line range in Head (Modified) editor
       decorationsRef.current = modifiedEditor.deltaDecorations(decorationsRef.current, [
         {
           range: {
@@ -66,11 +64,16 @@ export const MonacoDiffViewer = ({
     } else if (editorRef.current && activeConflict) {
       const targetLine =
         viewMode === 'base' ? activeConflict.baseStartLine : activeConflict.headStartLine;
-      if (targetLine) {
-        editorRef.current.revealLineInCenter(targetLine);
-      }
+      if (targetLine) editorRef.current.revealLineInCenter(targetLine);
     }
   }, [activeConflict, viewMode, filePath]);
+
+  const isRunning = ['PROVISIONING', 'CLONING', 'RUNNING_TESTS'].includes(sandboxStatus);
+  const hasPassed = sandboxStatus === 'PASSED';
+
+  const runTestsLabel = isRunning
+    ? ({ PROVISIONING: '⚙️ Provisioning…', CLONING: '📦 Cloning…', RUNNING_TESTS: '🧪 Running…' })[sandboxStatus]
+    : '🧪 Run Tests';
 
   return (
     <div className="monaco-viewer-card">
@@ -82,7 +85,6 @@ export const MonacoDiffViewer = ({
           <span className="monaco-lang-pill">{language}</span>
         </div>
 
-        {/* View Mode Toggle Switcher */}
         <div className="monaco-view-switcher">
           <button
             type="button"
@@ -90,6 +92,14 @@ export const MonacoDiffViewer = ({
             onClick={() => onViewModeChange?.('diff')}
           >
             Diff (Side-by-Side)
+          </button>
+          <button
+            type="button"
+            className={`monaco-mode-btn ${viewMode === 'resolve' ? 'active' : ''}`}
+            onClick={() => onViewModeChange?.('resolve')}
+            title="Edit and fix the conflict directly in the browser"
+          >
+            ✏️ Resolve (Editor)
           </button>
           <button
             type="button"
@@ -135,6 +145,23 @@ export const MonacoDiffViewer = ({
               lineNumbersMinChars: 3,
             }}
           />
+        ) : viewMode === 'resolve' ? (
+          <Editor
+            height="100%"
+            language={language}
+            value={resolvedSource}
+            onChange={(val) => onResolvedSourceChange?.(val || '')}
+            theme={editorTheme}
+            options={{
+              readOnly: false,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              fontSize: 13,
+              fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
+              lineNumbersMinChars: 3,
+            }}
+          />
         ) : (
           <Editor
             height="100%"
@@ -154,6 +181,43 @@ export const MonacoDiffViewer = ({
           />
         )}
       </div>
+
+      {/* Sandbox Action Bar */}
+      {onRunTests && (
+        <div className="sandbox-action-bar">
+          <span className="sandbox-action-label">
+            {hasPassed
+              ? '✅ Tests passed — resolution is validated'
+              : sandboxStatus === 'FAILED'
+              ? '❌ Tests failed — fix conflicts and retry'
+              : sandboxStatus === 'ERROR'
+              ? '🔥 Sandbox error — retry'
+              : activeConflict
+              ? `Validate fix for: ${activeConflict.filePath}`
+              : 'Select a conflict to run tests'}
+          </span>
+
+          <button
+            type="button"
+            className="btn-run-tests"
+            onClick={onRunTests}
+            disabled={isRunning || !activeConflict}
+            title="Provision a Docker sandbox, clone the repo, and run the test suite"
+          >
+            {runTestsLabel}
+          </button>
+
+          <button
+            type="button"
+            className="btn-push-resolution"
+            onClick={onPushResolution}
+            disabled={!hasPassed || isPushing}
+            title="Push the resolved file(s) to the PR branch on GitHub"
+          >
+            {isPushing ? '⏳ Pushing…' : '🚀 Push Resolution'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

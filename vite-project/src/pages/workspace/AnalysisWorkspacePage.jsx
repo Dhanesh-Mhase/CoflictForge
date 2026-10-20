@@ -3,10 +3,12 @@ import { useParams } from 'react-router-dom';
 import repositoriesApi from '../../api/repositories.api';
 import pullRequestsApi from '../../api/pull-requests.api';
 import analysisApi from '../../api/analysis.api';
+import sandboxApi from '../../api/sandbox.api';
 import AnalysisSummary from '../../components/workspace/AnalysisSummary';
 import ConflictList from '../../components/workspace/ConflictList';
 import MonacoDiffViewer from '../../components/workspace/MonacoDiffViewer';
 import ConflictChatPanel from '../../components/workspace/ConflictChatPanel';
+import SandboxTerminal from '../../components/workspace/SandboxTerminal';
 
 export const AnalysisWorkspacePage = () => {
   const { repositoryId, prNumber } = useParams();
@@ -19,12 +21,21 @@ export const AnalysisWorkspacePage = () => {
   const [activeConflict, setActiveConflict] = useState(null);
 
   const [sourceData, setSourceData] = useState(null);
-  const [viewMode, setViewMode] = useState('diff'); // 'diff' | 'base' | 'head'
+  const [viewMode, setViewMode] = useState('diff');
+  const [resolvedCodeMap, setResolvedCodeMap] = useState({});
 
   const [isLoadingPR, setIsLoadingPR] = useState(true);
   const [isLoadingSource, setIsLoadingSource] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // ── Sandbox state ────────────────────────────────────────────────────────
+  const [sandboxId, setSandboxId] = useState(null);
+  const [sandboxStatus, setSandboxStatus] = useState(null);
+  const [sandboxLogs, setSandboxLogs] = useState('');
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const sseRef = useRef(null); // SSE connection handle
 
   const hasAutoAnalyzed = useRef(false);
 
@@ -45,14 +56,12 @@ export const AnalysisWorkspacePage = () => {
       const loadedConflicts = conflictData?.conflicts || [];
       setConflicts(loadedConflicts);
 
-      // Collect changed files from PR or conflicts endpoint
       const allFiles =
         prData?.changedFiles?.length > 0
           ? prData.changedFiles
           : conflictData?.changedFiles || [];
       setChangedFiles(allFiles);
 
-      // Determine initial active file and conflict
       if (loadedConflicts.length > 0) {
         setActiveConflict(loadedConflicts[0]);
         setSelectedFilePath(loadedConflicts[0].filePath);
@@ -62,13 +71,8 @@ export const AnalysisWorkspacePage = () => {
         setActiveConflict(null);
       }
 
-      // Auto-trigger analysis once if PR has never been analyzed
-      if (
-        !hasAutoAnalyzed.current &&
-        prData?.analysisStatus === 'NOT_ANALYZED'
-      ) {
+      if (!hasAutoAnalyzed.current && prData?.analysisStatus === 'NOT_ANALYZED') {
         hasAutoAnalyzed.current = true;
-        // Trigger in background so initial diff loads immediately
         runAnalysis();
       }
     } catch (err) {
@@ -85,7 +89,7 @@ export const AnalysisWorkspacePage = () => {
     loadWorkspaceData();
   }, [loadWorkspaceData]);
 
-  // 2. Fetch Source code for Monaco when selectedFilePath changes
+  // 2. Fetch Source for Monaco
   useEffect(() => {
     if (!selectedFilePath || !repositoryId || !prNumber) return;
 
@@ -97,10 +101,17 @@ export const AnalysisWorkspacePage = () => {
       .then((data) => {
         if (isMounted) {
           setSourceData(data);
+          setResolvedCodeMap((prev) => {
+            if (prev[selectedFilePath] !== undefined) return prev;
+            return {
+              ...prev,
+              [selectedFilePath]: data.headSource || '',
+            };
+          });
         }
       })
       .catch((err) => {
-        console.warn('Could not fetch source code for file:', selectedFilePath, err);
+        console.warn('Could not fetch source:', err);
         if (isMounted) {
           setSourceData({
             filePath: selectedFilePath,
@@ -110,24 +121,16 @@ export const AnalysisWorkspacePage = () => {
           });
         }
       })
-      .finally(() => {
-        if (isMounted) setIsLoadingSource(false);
-      });
+      .finally(() => { if (isMounted) setIsLoadingSource(false); });
 
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [selectedFilePath, repositoryId, prNumber, activeConflict?.baseCode, activeConflict?.headCode]);
 
-  // 3. Selection Handlers
+  // 3. Selection handlers
   const handleSelectFile = (filePath) => {
     setSelectedFilePath(filePath);
     const fileConflicts = conflicts.filter((c) => c.filePath === filePath);
-    if (fileConflicts.length > 0) {
-      setActiveConflict(fileConflicts[0]);
-    } else {
-      setActiveConflict(null);
-    }
+    setActiveConflict(fileConflicts.length > 0 ? fileConflicts[0] : null);
   };
 
   const handleSelectConflict = (conflict) => {
@@ -137,7 +140,7 @@ export const AnalysisWorkspacePage = () => {
     }
   };
 
-  // 4. Analysis trigger function
+  // 4. Analysis
   const runAnalysis = async () => {
     setIsAnalyzing(true);
     setErrorMessage('');
@@ -149,21 +152,96 @@ export const AnalysisWorkspacePage = () => {
       const newConflicts = conflictRes?.conflicts || [];
       setConflicts(newConflicts);
 
-      if (conflictRes?.changedFiles?.length) {
-        setChangedFiles(conflictRes.changedFiles);
-      }
-
+      if (conflictRes?.changedFiles?.length) setChangedFiles(conflictRes.changedFiles);
       if (newConflicts.length > 0) {
         setActiveConflict(newConflicts[0]);
         setSelectedFilePath(newConflicts[0].filePath);
       }
     } catch (err) {
-      console.error('Analysis execution failed:', err);
-      setErrorMessage(
-        err.response?.data?.message || 'Analysis failed. Please check repository access.'
-      );
+      setErrorMessage(err.response?.data?.message || 'Analysis failed. Please check repository access.');
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  // ── 5. Sandbox: Run Tests ─────────────────────────────────────────────────
+  const handleRunTests = async () => {
+    if (!activeConflict || !repository || !pullRequest) return;
+
+    // Close previous SSE if any
+    sseRef.current?.close();
+    setSandboxLogs('');
+    setSandboxStatus('PROVISIONING');
+    setShowTerminal(true);
+    setSandboxId(null);
+
+    try {
+      const normalize = (p) => (p || '').replace(/^\/+/, '');
+      const activePath = normalize(activeConflict.filePath || currentFilePath);
+
+      // Find edited content across any path variation (with or without leading slash)
+      let fileContent = null;
+      for (const [k, v] of Object.entries(resolvedCodeMap)) {
+        if (normalize(k) === activePath && v !== undefined) {
+          fileContent = v;
+          break;
+        }
+      }
+
+      if (fileContent === null) {
+        fileContent =
+          resolvedCodeMap[currentFilePath] ??
+          resolvedCodeMap[activeConflict.filePath] ??
+          sourceData?.headSource ??
+          activeConflict.suggestedResolution ??
+          '';
+      }
+
+      console.log('[Sandbox] Running tests with file:', activePath, '\nPreview:', fileContent.slice(0, 100));
+
+      const resolvedFiles = {
+        [activePath]: fileContent,
+      };
+
+      const sandbox = await sandboxApi.provision(
+        repositoryId,
+        prNumber,
+        resolvedFiles,
+        activeConflict.id
+      );
+
+      setSandboxId(sandbox.id);
+      setSandboxStatus(sandbox.status);
+
+      // Open SSE log stream
+      sseRef.current = sandboxApi.streamLogs(
+        sandbox.id,
+        (text) => setSandboxLogs((prev) => prev + text),
+        (status) => setSandboxStatus(status),
+        (err) => console.error('SSE error:', err)
+      );
+    } catch (err) {
+      setSandboxStatus('ERROR');
+      setSandboxLogs(`[ERROR] ${err.response?.data?.error?.message || err.message}\n`);
+    }
+  };
+
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => sseRef.current?.close();
+  }, []);
+
+  // ── 6. Sandbox: Push Resolution ───────────────────────────────────────────
+  const handlePushResolution = async () => {
+    if (!sandboxId || sandboxStatus !== 'PASSED') return;
+    setIsPushing(true);
+    try {
+      await sandboxApi.pushResolution(sandboxId);
+      alert('✅ Resolution pushed to GitHub PR branch successfully!');
+    } catch (err) {
+      alert(`❌ Push failed: ${err.response?.data?.error?.message || err.message}`);
+    } finally {
+      setIsPushing(false);
     }
   };
 
@@ -192,6 +270,15 @@ export const AnalysisWorkspacePage = () => {
 
   return (
     <div className="analysis-workspace-page">
+      {/* Sandbox Terminal Overlay */}
+      {showTerminal && (
+        <SandboxTerminal
+          logs={sandboxLogs}
+          status={sandboxStatus}
+          onClose={() => setShowTerminal(false)}
+        />
+      )}
+
       {/* Top Bar / Header */}
       <AnalysisSummary
         repository={repository}
@@ -222,7 +309,7 @@ export const AnalysisWorkspacePage = () => {
           onReanalyze={runAnalysis}
         />
 
-        {/* Panel 2: Monaco Diff Editor */}
+        {/* Panel 2: Monaco Diff Editor + Sandbox Action Bar */}
         <section className="workspace-editor-column">
           <MonacoDiffViewer
             filePath={currentFilePath}
@@ -233,6 +320,17 @@ export const AnalysisWorkspacePage = () => {
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             isLoading={isLoadingSource}
+            resolvedSource={resolvedCodeMap[currentFilePath] ?? sourceData?.headSource ?? ''}
+            onResolvedSourceChange={(newCode) => {
+              setResolvedCodeMap((prev) => ({
+                ...prev,
+                [currentFilePath]: newCode,
+              }));
+            }}
+            onRunTests={handleRunTests}
+            onPushResolution={handlePushResolution}
+            sandboxStatus={sandboxStatus}
+            isPushing={isPushing}
           />
         </section>
 
@@ -254,4 +352,3 @@ export const AnalysisWorkspacePage = () => {
 };
 
 export default AnalysisWorkspacePage;
-

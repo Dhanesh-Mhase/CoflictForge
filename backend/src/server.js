@@ -7,6 +7,7 @@ import { securityHeaders } from './middlewares/security.middleware.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js';
 import authRoutes from './routes/auth.routes.js';
 import repositoryRoutes from './routes/repository.routes.js';
+import sandboxRoutes from './routes/sandbox.routes.js';
 
 validateEnv();
 
@@ -14,16 +15,18 @@ const app = express();
 
 app.set('trust proxy', 1);
 
-app.use(securityHeaders);
+const corsOptions = {
+  origin: env.FRONTEND_URL,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
 
-app.use(
-  cors({
-    origin: env.FRONTEND_URL,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
+// Handle preflight requests BEFORE any other middleware (Express 5 wildcard syntax)
+app.options('/{*path}', cors(corsOptions));
+app.use(cors(corsOptions));
+
+app.use(securityHeaders);
 
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
@@ -35,6 +38,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/repositories', repositoryRoutes);
+app.use('/api/sandbox', sandboxRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

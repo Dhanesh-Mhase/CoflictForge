@@ -107,6 +107,7 @@ export const AnalysisWorkspacePage = () => {
             language: 'plaintext',
             baseSource: activeConflict?.baseCode || '',
             headSource: activeConflict?.headCode || '',
+            ancestorSource: activeConflict?.ancestorCode || '',
           });
         }
       })
@@ -117,7 +118,7 @@ export const AnalysisWorkspacePage = () => {
     return () => {
       isMounted = false;
     };
-  }, [selectedFilePath, repositoryId, prNumber, activeConflict?.baseCode, activeConflict?.headCode]);
+  }, [selectedFilePath, repositoryId, prNumber, activeConflict?.baseCode, activeConflict?.headCode, activeConflict?.ancestorCode]);
 
   // 3. Selection Handlers
   const handleSelectFile = (filePath) => {
@@ -229,6 +230,10 @@ export const AnalysisWorkspacePage = () => {
             language={sourceData?.language || 'javascript'}
             baseSource={sourceData?.baseSource || ''}
             headSource={sourceData?.headSource || ''}
+            ancestorSource={sourceData?.ancestorSource || ''}
+            baseSha={sourceData?.baseSha || pullRequest?.baseSha || ''}
+            headSha={sourceData?.headSha || pullRequest?.headSha || ''}
+            ancestorSha={sourceData?.ancestorSha || activeConflict?.ancestorSha || ''}
             activeConflict={activeConflict}
             viewMode={viewMode}
             onViewModeChange={setViewMode}

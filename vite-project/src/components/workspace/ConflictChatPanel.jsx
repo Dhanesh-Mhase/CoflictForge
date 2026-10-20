@@ -147,6 +147,20 @@ export const ConflictChatPanel = ({
           </pre>
         </div>
 
+        {/* 3b. Common Ancestor Snippet (Old Base) */}
+        {conflict.ancestorCode && (
+          <div className="ai-card ancestor-card">
+            <details className="ancestor-details">
+              <summary className="ancestor-summary">
+                <span>🕰️</span> Common Ancestor Excerpt
+              </summary>
+              <pre className="ancestor-code-block">
+                <code>{conflict.ancestorCode}</code>
+              </pre>
+            </details>
+          </div>
+        )}
+
         {/* 4. Chat History Thread */}
         <div className="ai-chat-thread">
           <div className="chat-thread-title">Follow-up Discussion</div>

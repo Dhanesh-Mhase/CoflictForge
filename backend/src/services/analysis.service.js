@@ -264,7 +264,7 @@ export const analysisService = {
       throw new BadRequestError('Invalid pull request number.', 'INVALID_PR_NUMBER');
     }
 
-    const pr = await pullRequestRepository.findByRepoAndNumber(repo.id, parsedNumber, false);
+    const pr = await pullRequestRepository.findByRepoAndNumber(repo.id, parsedNumber, true);
     if (!pr) {
       throw new NotFoundError('Pull request not found.', 'PULL_REQUEST_NOT_FOUND');
     }
@@ -273,9 +273,21 @@ export const analysisService = {
     const baseSha = pr.analyzedBaseSha || pr.baseSha;
     const headSha = pr.analyzedHeadSha || pr.headSha;
 
-    const [baseSource, headSource] = await Promise.all([
+    let ancestorSha = pr.conflicts?.find((c) => c.ancestorSha)?.ancestorSha || null;
+
+    if (!ancestorSha && baseSha && headSha) {
+      try {
+        const compareData = await githubService.compareCommits(repo.owner, repo.name, baseSha, headSha);
+        ancestorSha = compareData?.merge_base_commit?.sha || null;
+      } catch (err) {
+        console.warn('Could not determine common ancestor commit for getSource:', err.message);
+      }
+    }
+
+    const [baseSource, headSource, ancestorSource] = await Promise.all([
       baseSha ? githubService.getFileContent(repo.owner, repo.name, filePath, baseSha) : null,
       headSha ? githubService.getFileContent(repo.owner, repo.name, filePath, headSha) : null,
+      ancestorSha ? githubService.getFileContent(repo.owner, repo.name, filePath, ancestorSha) : null,
     ]);
 
     return {
@@ -283,8 +295,10 @@ export const analysisService = {
       language: detectLanguage(filePath),
       baseSha,
       headSha,
+      ancestorSha,
       baseSource: baseSource !== null ? baseSource : '',
       headSource: headSource !== null ? headSource : '',
+      ancestorSource: ancestorSource !== null ? ancestorSource : '',
     };
   },
 };

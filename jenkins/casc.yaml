@@ -37,7 +37,9 @@ jobs:
               }
             }
             scriptPath('Jenkinsfile')
-            lightweight(true)
+            // Full checkout so every build (even a failed one) records the branch it built;
+            // pipeline polling tracks the branch from the last build, not the job config.
+            lightweight(false)
           }
         }
       }

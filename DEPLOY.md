@@ -90,7 +90,29 @@ Open `https://<DOMAIN>`. Health check: `https://<DOMAIN>/health`.
 | SSH | `ssh -i ~/.ssh/conflictforge-key.pem ubuntu@3.219.14.5` |
 | App directory | `~/conflictforge` (`.env` is a symlink to `.env.production`, so plain `docker compose …` works) |
 
-The code is copied from a local checkout with rsync, not git-cloned. To redeploy from your machine:
+## Continuous deployment (Jenkins)
+
+**Pushing to `main` deploys automatically.** Jenkins checks GitHub about every 2 minutes, or instantly once the webhook below is added. It then runs the [Jenkinsfile](Jenkinsfile): build images → `docker compose up -d` → health check. The MySQL data and HTTPS certificates are kept between deploys.
+
+| | |
+|---|---|
+| Jenkins UI | https://jenkins.3-219-14-5.sslip.io (user `admin`) |
+| Admin password | `ssh -i ~/.ssh/conflictforge-key.pem ubuntu@3.219.14.5 'grep JENKINS_ADMIN_PASSWORD ~/conflictforge/jenkins/.env'` |
+| Job | `conflictforge-deploy`, defined in [jenkins/casc.yaml](jenkins/casc.yaml) |
+| Jenkins stack | `~/conflictforge/jenkins` (separate compose project, so a deploy never restarts Jenkins) |
+| Branch watched | `DEPLOY_BRANCH` in `~/conflictforge/jenkins/.env`, then `docker compose up -d` in that folder |
+
+**Optional: instant builds through a GitHub webhook** (needs admin on the repo): Settings → Webhooks → Add webhook
+- Payload URL: `https://jenkins.3-219-14-5.sslip.io/github-webhook/`
+- Content type: `application/json`, event: **Just the push event**
+
+**Secrets live only on the server:** `~/conflictforge/.env.production` (app) and `~/conflictforge/jenkins/.env` (Jenkins). Jenkins mounts the app file read-only. Don't overwrite `.env.production`: changing `MYSQL_PASSWORD` there locks the app out of the existing database.
+
+**Sandbox is enabled:** the backend container has the host Docker socket (root-equivalent). To disable it, remove the `volumes`/`group_add` blocks from the `backend` service in [docker-compose.yml](docker-compose.yml) and push.
+
+### Manual redeploy (fallback if Jenkins is down)
+
+The code is copied from a local checkout with rsync, not git-cloned:
 
 ```bash
 rsync -az -e "ssh -i ~/.ssh/conflictforge-key.pem" \

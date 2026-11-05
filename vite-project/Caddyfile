@@ -1,0 +1,23 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API and health check go to the Node backend
+	handle /api/* {
+		reverse_proxy backend:5000
+	}
+	handle /health {
+		reverse_proxy backend:5000
+	}
+
+	# Everything else is the React SPA (client-side routing falls back to index.html)
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Jenkins CI (separate compose project in ./jenkins, joined to this network)
+jenkins.{$DOMAIN} {
+	reverse_proxy jenkins:8080
+}

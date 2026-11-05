@@ -1,0 +1,34 @@
+# Jenkins for ConflictForge. Separate project so a deploy never restarts Jenkins itself.
+# Start on the server:  cd ~/conflictforge/jenkins && docker compose up -d --build
+# Settings and the admin credential come from ./.env (server-only, never committed).
+services:
+  jenkins:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env   # admin credential, read by casc.yaml
+    environment:
+      # Tuned for a 1 GB instance
+      JAVA_OPTS: >-
+        -Xms128m -Xmx256m -XX:MaxMetaspaceSize=192m -XX:+UseSerialGC
+        -Djenkins.install.runSetupWizard=false
+      JENKINS_URL: ${JENKINS_URL:?set JENKINS_URL}
+      REPO_URL: ${REPO_URL:-https://github.com/Dhanesh-Mhase/CoflictForge.git}
+      DEPLOY_BRANCH: ${DEPLOY_BRANCH:-main}
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID}"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${APP_ENV_FILE:-/home/ubuntu/conflictforge/.env.production}:/deploy/.env.production:ro
+    networks:
+      - app
+    mem_limit: 650m
+
+networks:
+  app:
+    external: true
+    name: conflictforge_default
+
+volumes:
+  jenkins_home:

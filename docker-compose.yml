@@ -1,0 +1,73 @@
+# Production stack for EC2.
+#   Jenkins runs:  docker compose --env-file "$ENV_FILE" up -d --build   (ENV_FILE=/deploy/.env.production)
+#   Manually:      docker compose --env-file .env.production up -d --build
+#
+# Secrets are never written in this file. Containers receive them through `env_file`
+# (the server-only .env.production). The Jenkinsfile's "Validate config" stage fails the
+# build early if a required setting is missing.
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    # Small-instance tuning (t3.micro has 1 GB RAM)
+    command: ["--performance-schema=OFF", "--innodb-buffer-pool-size=64M", "--max-connections=50"]
+    env_file:
+      - ${ENV_FILE:-.env.production}   # provides the MySQL user/root credentials
+    environment:
+      MYSQL_DATABASE: conflictforge
+      MYSQL_USER: conflictforge
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # $$ = read from the container's environment at runtime, not baked into the config
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Not published to the host: only reachable from the backend container.
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ${ENV_FILE:-.env.production}   # JWT secrets, Google client ID, GitHub/Groq keys
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: mysql://conflictforge:${MYSQL_PASSWORD}@db:3306/conflictforge
+      FRONTEND_URL: https://${DOMAIN:?set DOMAIN}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+    # Sandbox feature: the backend starts test containers through the host Docker daemon.
+    # WARNING: this is root-equivalent access to the host. Remove these two blocks to disable the sandbox.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
+
+  web:
+    build:
+      context: ./vite-project
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  mysql_data:
+  caddy_data:
+  caddy_config:
